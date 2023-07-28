@@ -7,7 +7,7 @@
 *.dll
 *.so
 *.dylib
-
+*.mp3
 # Test binary, built with `go test -c`
 *.test
 
