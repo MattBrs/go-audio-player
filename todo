@@ -1,0 +1,8 @@
+# Insert note for this entry.
+# Finish with C-c C-c, or cancel with C-c C-k.
+
+fare una queue di file, presi dalla directory.
+
+goroutine che decodifica tutti i file i background, mentre si ascolta la prima canzone.
+
+fare in modo che funzionano diversi tipi di file (FLAC, mp3, ecc)
