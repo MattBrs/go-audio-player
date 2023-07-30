@@ -13,6 +13,9 @@ import (
 	"github.com/gdamore/tcell"
 )
 
+const MAXVOLUME = 2.0
+const MINVOLUME = -10.0
+
 type audioPanel struct {
 	sampleRate beep.SampleRate
 	fileStream beep.StreamSeeker
@@ -32,19 +35,43 @@ func drawText(screen tcell.Screen, text string, posX int, posY int, style tcell.
 	}
 }
 
+func calcVolumePercentage(volume float64) string {
+	normalizedVolume := int32(((volume - MINVOLUME) / (MAXVOLUME - MINVOLUME)) * 100)
+	return fmt.Sprintf("%d", normalizedVolume)
+}
+
 func (ap *audioPanel) render(screen tcell.Screen) {
 	screen.Clear()
 	mainStyle := tcell.StyleDefault.
-		Background(tcell.NewHexColor(0x473437)).
-		Foreground(tcell.NewHexColor(0xD7D8A2))
+		Background(tcell.NewRGBColor(71, 52, 55)).
+		Foreground(tcell.NewRGBColor(215, 216, 162))
 	statusStyle := mainStyle.
-		Foreground(tcell.NewHexColor(0xDDC074)).
+		Foreground(tcell.NewRGBColor(221, 216, 16)).
 		Bold(true)
-
 	screen.Fill(' ', mainStyle)
 
-	drawText(screen, "ciaoo", 0, 0, mainStyle)
-	drawText(screen, "test", 0, 1, statusStyle)
+	speaker.Lock()
+	currentVolume := ap.volume.Volume
+	isPaused := fmt.Sprintf("%t", ap.ctrl.Paused)
+	position := ap.sampleRate.D(ap.fileStream.Position())
+	length := ap.sampleRate.D(ap.fileStream.Len())
+	speaker.Unlock()
+
+	elapsed := fmt.Sprintf("%v", position.Round(time.Second))
+	trackLength := fmt.Sprintf("%v", length.Round(time.Second))
+
+	drawText(screen, "current volume", 0, 0, mainStyle)
+	drawText(screen, calcVolumePercentage(currentVolume)+"%", 5, 1, statusStyle)
+
+	drawText(screen, "paused", 20, 0, mainStyle)
+	drawText(screen, isPaused, 20, 1, statusStyle)
+
+	drawText(screen, "elapsed", 40, 0, mainStyle)
+	drawText(screen, elapsed, 40, 1, statusStyle)
+
+	drawText(screen, "track length", 60, 0, mainStyle)
+	drawText(screen, trackLength, 60, 1, statusStyle)
+
 	screen.Show()
 }
 
@@ -67,17 +94,17 @@ func (ap *audioPanel) handleEvent(event tcell.Event) (bool, bool) {
 			speaker.Lock()
 
 			ap.volume.Volume += 0.4
-			if ap.volume.Volume >= 2.2 {
-				ap.volume.Volume = 2.2
+			if ap.volume.Volume >= MAXVOLUME {
+				ap.volume.Volume = MAXVOLUME
 			}
 			speaker.Unlock()
 			return true, false
 		case 'd':
 			speaker.Lock()
 
-			ap.volume.Volume -= 0.4
-			if ap.volume.Volume <= -16 {
-				ap.volume.Volume = -16
+			ap.volume.Volume -= 0.6
+			if ap.volume.Volume <= MINVOLUME {
+				ap.volume.Volume = MINVOLUME
 			}
 
 			speaker.Unlock()
@@ -92,11 +119,11 @@ func (ap *audioPanel) handleEvent(event tcell.Event) (bool, bool) {
 
 			newPos := ap.fileStream.Position()
 			if event.Rune() == 'n' {
-				newPos += ap.sampleRate.N(time.Second)
+				newPos += 5 * ap.sampleRate.N(time.Second)
 			}
 
 			if event.Rune() == 'b' {
-				newPos -= ap.sampleRate.N(time.Second)
+				newPos -= 5 * ap.sampleRate.N(time.Second)
 			}
 
 			if newPos < 0 {
