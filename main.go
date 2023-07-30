@@ -25,15 +25,27 @@ func (ap *audioPanel) play() {
 	speaker.Play(ap.volume)
 }
 
-func drawText(screen tcell.Screen, text string, posX int, posY int) {
+func drawText(screen tcell.Screen, text string, posX int, posY int, style tcell.Style) {
 	for _, r := range text {
-		screen.SetContent(posX, posY, r, nil, tcell.StyleDefault)
+		screen.SetContent(posX, posY, r, nil, style)
 		posX++
 	}
 }
 
 func (ap *audioPanel) render(screen tcell.Screen) {
-	drawText(screen, "ciaoo", 10, 10)
+	screen.Clear()
+	mainStyle := tcell.StyleDefault.
+		Background(tcell.NewHexColor(0x473437)).
+		Foreground(tcell.NewHexColor(0xD7D8A2))
+	statusStyle := mainStyle.
+		Foreground(tcell.NewHexColor(0xDDC074)).
+		Bold(true)
+
+	screen.Fill(' ', mainStyle)
+
+	drawText(screen, "ciaoo", 0, 0, mainStyle)
+	drawText(screen, "test", 0, 1, statusStyle)
+	screen.Show()
 }
 
 func (ap *audioPanel) handleEvent(event tcell.Event) (bool, bool) {
@@ -43,23 +55,9 @@ func (ap *audioPanel) handleEvent(event tcell.Event) (bool, bool) {
 			return false, true
 		}
 
+		// check if the pressed key is a unicode key
 		if event.Key() != tcell.KeyRune {
-
 			return false, false
-		}
-
-		if event.Key() == tcell.KeyUp {
-			speaker.Lock()
-			ap.volume.Volume += 0.2
-			speaker.Unlock()
-			return true, false
-		}
-
-		if event.Key() == tcell.KeyDown {
-			speaker.Lock()
-			ap.volume.Volume -= 0.2
-			speaker.Unlock()
-			return true, false
 		}
 
 		switch unicode.ToLower(event.Rune()) {
@@ -67,16 +65,21 @@ func (ap *audioPanel) handleEvent(event tcell.Event) (bool, bool) {
 			return false, true
 		case 'a':
 			speaker.Lock()
-			if ap.volume.Volume < 2.5 {
-				ap.volume.Volume += 0.1
+
+			ap.volume.Volume += 0.4
+			if ap.volume.Volume >= 2.2 {
+				ap.volume.Volume = 2.2
 			}
 			speaker.Unlock()
 			return true, false
 		case 'd':
 			speaker.Lock()
-			if ap.volume.Volume > -16 {
-				ap.volume.Volume -= 0.1
+
+			ap.volume.Volume -= 0.4
+			if ap.volume.Volume <= -16 {
+				ap.volume.Volume = -16
 			}
+
 			speaker.Unlock()
 			return true, false
 		case 'p':
@@ -123,64 +126,18 @@ func newAudioPanel(sampleRate beep.SampleRate, stream beep.StreamSeeker) *audioP
 	return &audioPanel{sampleRate: sampleRate, resampler: resampler, volume: volume, ctrl: ctrl, fileStream: stream}
 }
 
-func main() {
-	if len(os.Args) != 2 {
-		fmt.Println("Wrong number of parameters! Specify only the filename.")
-		os.Exit(1)
-	}
+func run(screen tcell.Screen, ap *audioPanel) {
+	events := make(chan tcell.Event)  // create channel to handle user input events
+	seconds := time.Tick(time.Second) // create channel that gets updated every second
 
-	file, error := os.Open(os.Args[1])
-	if error != nil {
-		fmt.Println(fmt.Sprintf("Error while opening file: %\n", error))
-		os.Exit(1)
-	}
-	defer file.Close()
-
-	fileStream, format, err := mp3.Decode(file)
-	if err != nil {
-		fmt.Println(fmt.Sprintf("Error while decoding mp3 file: %s\n", err))
-		os.Exit(1)
-	}
-	defer fileStream.Close()
-
-	fmt.Println("Channels -> ", format.NumChannels)
-	fmt.Println("Sample rate -> ", format.SampleRate)
-
-	err = speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/30))
-	if err != nil {
-		fmt.Println(fmt.Sprintf("Error while initing the speaker: %s \n", err))
-		os.Exit(1)
-	}
-	defer speaker.Close()
-
-	screen, error := tcell.NewScreen()
-	if error != nil {
-		fmt.Println(fmt.Sprintf("Error opening screen %s\n", error))
-		panic(1)
-	}
-
-	error = screen.Init()
-	if error != nil {
-		fmt.Println(fmt.Sprintf("Error initing screen: %s\n", error))
-		panic(1)
-	}
-	defer screen.Fini()
-
-	ap := newAudioPanel(format.SampleRate, fileStream)
-
-	screen.Clear()
-	screen.Show()
-	ap.play()
-
-	events := make(chan tcell.Event)
-	seconds := time.Tick(time.Second)
-
+	// gorouting to grap all user input
 	go func() {
 		for {
 			events <- screen.PollEvent()
 		}
 	}()
 
+	// when an event happens, execute the relative procedure
 	for true {
 		select {
 		case event := <-events:
@@ -196,7 +153,68 @@ func main() {
 		case <-seconds:
 			ap.render(screen)
 		}
+	}
+}
 
+func initScreen() tcell.Screen {
+	screen, error := tcell.NewScreen()
+	if error != nil {
+		fmt.Println(fmt.Sprintf("Error opening screen %s\n", error))
+		os.Exit(1)
 	}
 
+	error = screen.Init()
+	if error != nil {
+		fmt.Println(fmt.Sprintf("Error initing screen: %s\n", error))
+		os.Exit(1)
+	}
+
+	return screen
+}
+
+func decodeFile(file *os.File) (beep.StreamSeekCloser, beep.Format) {
+	fileStream, format, err := mp3.Decode(file)
+	if err != nil {
+		fmt.Println(fmt.Sprintf("Error while decoding mp3 file: %s\n", err))
+		os.Exit(1)
+	}
+
+	return fileStream, format
+}
+
+func initSpeaker(format beep.Format) {
+	error := speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/30))
+	if error != nil {
+		fmt.Println(fmt.Sprintf("Error while initing the speaker: %s \n", error))
+		os.Exit(1)
+	}
+}
+
+func main() {
+	if len(os.Args) != 2 {
+		fmt.Println("Wrong number of parameters! Specify only the filename.")
+		os.Exit(1)
+	}
+
+	file, error := os.Open(os.Args[1])
+	if error != nil {
+		fmt.Println(fmt.Sprintf("Error while opening file: %\n", error))
+		os.Exit(1)
+	}
+
+	fileStream, format := decodeFile(file)
+
+	initSpeaker(format)
+	screen := initScreen()
+	ap := newAudioPanel(format.SampleRate, fileStream)
+
+	ap.render(screen)
+	ap.play()
+
+	run(screen, ap)
+
+	defer fileStream.Close()
+	defer file.Close()
+	defer speaker.Close()
+	defer screen.Fini()
 }
