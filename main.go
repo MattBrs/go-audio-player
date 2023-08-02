@@ -40,6 +40,22 @@ func calcVolumePercentage(volume float64) string {
 	return fmt.Sprintf("%d", normalizedVolume)
 }
 
+func calcComplPercentage(position float64, length float64) float64 {
+	if position == 0 {
+		return 0
+	}
+
+	return (position * 100) / length
+}
+
+func drawPercentageBar(screen tcell.Screen, posX int, posY, percentage int64, style tcell.Style) {
+	drawText(screen, "[", posX, int(posY), style)
+	for i := 0; i < int(percentage); i++ {
+		drawText(screen, "-", posX+i+1, int(posY), style)
+
+	}
+}
+
 func (ap *audioPanel) render(screen tcell.Screen) {
 	screen.Clear()
 	mainStyle := tcell.StyleDefault.
@@ -59,9 +75,8 @@ func (ap *audioPanel) render(screen tcell.Screen) {
 
 	elapsed := fmt.Sprintf("%v", position.Round(time.Second))
 	trackLength := fmt.Sprintf("%v", length.Round(time.Second))
-
 	drawText(screen, "current volume", 0, 0, mainStyle)
-	drawText(screen, calcVolumePercentage(currentVolume)+"%", 5, 1, statusStyle)
+	drawText(screen, calcVolumePercentage(currentVolume)+"%", 0, 1, statusStyle)
 
 	drawText(screen, "paused", 20, 0, mainStyle)
 	drawText(screen, isPaused, 20, 1, statusStyle)
@@ -71,6 +86,19 @@ func (ap *audioPanel) render(screen tcell.Screen) {
 
 	drawText(screen, "track length", 60, 0, mainStyle)
 	drawText(screen, trackLength, 60, 1, statusStyle)
+
+	drawText(screen, "percentage completed", 80, 0, mainStyle)
+
+	complPerc := calcComplPercentage(position.Seconds(), length.Seconds())
+
+	drawText(
+		screen,
+		fmt.Sprintf("%d", int64(complPerc)),
+		80,
+		1,
+		statusStyle)
+
+	drawPercentageBar(screen, 0, 10, int64(complPerc), mainStyle)
 
 	screen.Show()
 }
